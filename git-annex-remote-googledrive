@@ -291,35 +291,41 @@ def setFolder(base, keys):
     common.log(repr(base) + " - " + repr(keys))
     keys = keys.replace("VALUE ", "").split("/")
 
-    folder = findInFolder(base, False)
-    if folder:
+    folderid = common.getConfig("folderid")
+    if folderid:
+        folder = service.files().get(fileId=folderid, fields='id').execute()
         common.log("Using folder: " + repr(folder["id"]))
         ANNEX_FOLDER = folder
     else:
-        common.log("Creating root folder: " + repr(folder))
-        root_folder = service.files().insert(body={ 'title': base, 'mimeType': "application/vnd.google-apps.folder" }).execute()
-        common.log("root folder: " + repr(root_folder["id"]))
-        ANNEX_FOLDER = root_folder
+        folder = findInFolder(base, False)
+        if folder:
+            common.log("Using folder: " + repr(folder["id"]))
+            ANNEX_FOLDER = folder
+        else:
+            common.log("Creating root folder: " + repr(folder))
+            root_folder = service.files().insert(body={ 'title': base, 'mimeType': "application/vnd.google-apps.folder" }).execute()
+            common.log("root folder: " + repr(root_folder["id"]))
+            ANNEX_FOLDER = root_folder
 
-    folder = findInFolder(keys[0], ANNEX_FOLDER)
-    if folder:
-        common.log("Using folder1: " + repr(folder["id"]))
-        ANNEX_FOLDER = folder
-    else:
-        common.log("Creating secondary folder")
-        root_folder = service.files().insert(body={ 'title': keys[0], 'mimeType': "application/vnd.google-apps.folder", "parents": [ANNEX_FOLDER]}).execute()
-        common.log("root folder: " + repr(root_folder["id"]))
-        ANNEX_FOLDER = root_folder
+        folder = findInFolder(keys[0], ANNEX_FOLDER)
+        if folder:
+            common.log("Using folder1: " + repr(folder["id"]))
+            ANNEX_FOLDER = folder
+        else:
+            common.log("Creating secondary folder")
+            root_folder = service.files().insert(body={ 'title': keys[0], 'mimeType': "application/vnd.google-apps.folder", "parents": [ANNEX_FOLDER]}).execute()
+            common.log("root folder: " + repr(root_folder["id"]))
+            ANNEX_FOLDER = root_folder
 
-    folder = findInFolder(keys[1], ANNEX_FOLDER)
-    if folder:
-        common.log("Using folder2: " + repr(folder["id"]))
-        ANNEX_FOLDER = folder
-    else:
-        common.log("Creating tertiary folder")
-        root_folder = service.files().insert(body={ 'title': keys[1], 'mimeType': "application/vnd.google-apps.folder", "parents": [ANNEX_FOLDER]}).execute()
-        common.log("root folder: " + repr(root_folder["id"]))
-        ANNEX_FOLDER = root_folder
+        folder = findInFolder(keys[1], ANNEX_FOLDER)
+        if folder:
+            common.log("Using folder2: " + repr(folder["id"]))
+            ANNEX_FOLDER = folder
+        else:
+            common.log("Creating tertiary folder")
+            root_folder = service.files().insert(body={ 'title': keys[1], 'mimeType': "application/vnd.google-apps.folder", "parents": [ANNEX_FOLDER]}).execute()
+            common.log("root folder: " + repr(root_folder["id"]))
+            ANNEX_FOLDER = root_folder
 
     return ANNEX_FOLDER
 
@@ -330,25 +336,33 @@ def initremote(line):
     oauth = os.getenv("OAUTH") or ""
     encryption = common.getConfig("encryption")
     myfolder = common.getConfig("folder")
+    myfolderid = common.getConfig("folderid")
     stored_creds = sys.modules["__main__"].login({"oauth": oauth})
-    if len(myfolder) and stored_creds:
-        common.sprint('SETCONFIG myfolder ' + myfolder + '')
+    if (len(myfolder) or len(myfolderid)) and stored_creds:
+        if len(myfolder):
+            common.sprint('SETCONFIG myfolder ' + myfolder + '')
+        if len(myfolderid):
+            common.sprint('SETCONFIG myfolderid ' + myfolderid + '')
         common.sprint('SETCONFIG stored_creds ' + json.dumps(stored_creds) + '')
         common.sprint('INITREMOTE-SUCCESS')
     else:
-        common.sprint('INITREMOTE-FAILURE You need to set OAUTH environment variables and folder and encryption parameters when running initremote.')
+        common.sprint('INITREMOTE-FAILURE You need to set OAUTH environment variables and folder or folderid and encryption parameters when running initremote.')
     common.log("Done")
 
 def prepare(line):
     common.log("")
 
     myfolder = common.getConfig("folder")
+    myfolderid = common.getConfig("folderid")
     encryption = common.getConfig("encryption")
     stored_creds = common.getConfig("stored_creds")
     stored_creds = json.loads(stored_creds)
 
-    if len(myfolder) > 1 and len(stored_creds):
-        conf["folder"] = myfolder
+    if (len(myfolder) > 1 or len(myfolderid) > 1) and len(stored_creds):
+        if len(myfolder) > 1:
+            conf["folder"] = myfolder
+        if len(myfolderid) > 1:
+            conf["folderid"] = myfolderid
         conf["encrypted"] = encryption.lower().find("none") == -1
         common.sprint('DEBUG ' + plugin)
         if login(stored_creds):
@@ -356,13 +370,16 @@ def prepare(line):
         else:
             common.sprint('PREPARE-FAILURE Login failure.')
     else:
-        common.sprint('PREPARE-FAILURE You need to set USERNAME and PASSWORD environment variables and folder and encryption parameters for the remote.')
+        common.sprint('PREPARE-FAILURE You need to set USERNAME and PASSWORD environment variables and folder or folderid and encryption parameters for the remote.')
     common.log("")
 
 def transfer(line):
     common.log("")
-    folder = setFolder(conf["folder"], common.ask("DIRHASH " + line[2]))
-
+    if "folder" in conf:
+        folder = setFolder(conf["folder"], common.ask("DIRHASH " + line[2]))
+    if "folderid" in conf:
+        folder = setFolder(conf["folderid"], common.ask("DIRHASH " + line[2]))
+        
     if line[1] == "STORE":
         if postFile(line[2], " ".join(line[3:]), folder):
             common.sprint('TRANSFER-SUCCESS STORE ' + line[2] + '')
@@ -377,7 +394,11 @@ def transfer(line):
 
 def checkpresent(line):
     common.log("")
-    folder = setFolder(conf["folder"], common.ask("DIRHASH " + line[1]))
+    if "folder" in conf:
+        folder = setFolder(conf["folder"], common.ask("DIRHASH " + line[1]))
+    if "folderid" in conf:
+        folder = setFolder(conf["folderid"], common.ask("DIRHASH " + line[1]))
+        
     if not len(folder):
         common.sprint('CHECKPRESENT-UNKNOWN ' + line[1] + ' this remote is not currently available')
         return None
@@ -390,8 +411,11 @@ def checkpresent(line):
 
 def remove(line):
     common.log("")
-    folder = setFolder(conf["folder"], common.ask("DIRHASH " + line[1]))
-                
+    if "folder" in conf:
+        folder = setFolder(conf["folder"], common.ask("DIRHASH " + line[1]))
+    if "folderid" in conf:
+        folder = setFolder(conf["folderid"], common.ask("DIRHASH " + line[1]))
+        
     if deleteFile(line[1], folder):
         common.sprint('REMOVE-SUCCESS ' + line[1] + '')
     else:
